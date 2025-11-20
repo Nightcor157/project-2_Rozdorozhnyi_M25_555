@@ -2,9 +2,19 @@
 
 from typing import Any, Dict, List
 
+from src.decorators import (
+    confirm_action,
+    create_cacher,
+    handle_db_errors,
+    log_time,
+)
+
 ALLOWED_TYPES = {"int", "str", "bool"}
 
+_select_cache = create_cacher()
 
+
+@handle_db_errors
 def create_table(
     metadata: Dict[str, Any],
     table_name: str,
@@ -18,16 +28,14 @@ def create_table(
 
     for col in columns:
         if ":" not in col:
-            print(f"Некорректное значение: {col}. Попробуйте снова.")
-            return metadata
+            raise ValueError(f"Некорректное определение столбца: {col}")
 
         name, type_name = col.split(":", 1)
         name = name.strip()
         type_name = type_name.strip()
 
         if type_name not in ALLOWED_TYPES:
-            print(f"Некорректное значение: {col}. Попробуйте снова.")
-            return metadata
+            raise ValueError(f"Некорректный тип столбца: {col}")
 
         parsed_columns.append({"name": name, "type": type_name})
 
@@ -48,10 +56,11 @@ def create_table(
     return metadata
 
 
+@confirm_action("удаление таблицы")
+@handle_db_errors
 def drop_table(metadata: Dict[str, Any], table_name: str) -> Dict[str, Any]:
     if table_name not in metadata:
-        print(f'Ошибка: Таблица "{table_name}" не существует.')
-        return metadata
+        raise KeyError(table_name)
 
     del metadata[table_name]
     print(f'Таблица "{table_name}" успешно удалена.')
@@ -66,20 +75,28 @@ def list_tables(metadata: Dict[str, Any]) -> None:
 # ---------- CRUD-операции с данными ----------
 
 
+@log_time
+@handle_db_errors
 def insert(
     metadata: Dict[str, Any],
     table_name: str,
     values: List[Any],
     table_data: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
+    if table_name not in metadata:
+        raise KeyError(table_name)
+
     columns_meta = metadata[table_name]["columns"]
-    # первый столбец — ID
     id_values = [row.get("ID", 0) for row in table_data]
     new_id = max(id_values) + 1 if id_values else 1
 
     record: Dict[str, Any] = {"ID": new_id}
 
-    for column_meta, value in zip(columns_meta[1:], values):
+    data_columns = [col for col in columns_meta if col["name"] != "ID"]
+    if len(values) != len(data_columns):
+        raise ValueError("Некорректное количество значений для вставки.")
+
+    for column_meta, value in zip(data_columns, values, strict=False):
         record[column_meta["name"]] = value
 
     table_data.append(record)
@@ -87,17 +104,29 @@ def insert(
     return table_data
 
 
+@log_time
+@handle_db_errors
 def select(
+    table_name: str,
     table_data: List[Dict[str, Any]],
     where_clause: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
-    if where_clause is None:
-        return table_data
+    key = (table_name, None)
+    if where_clause is not None:
+        # where_clause вида {'column': value}
+        column, value = next(iter(where_clause.items()))
+        key = (table_name, (column, value))
 
-    column, value = next(iter(where_clause.items()))
-    return [row for row in table_data if row.get(column) == value]
+    def compute() -> List[Dict[str, Any]]:
+        if where_clause is None:
+            return table_data
+        column, value = next(iter(where_clause.items()))
+        return [row for row in table_data if row.get(column) == value]
+
+    return _select_cache(key, compute)
 
 
+@handle_db_errors
 def update(
     table_name: str,
     table_data: List[Dict[str, Any]],
@@ -123,6 +152,8 @@ def update(
     return table_data
 
 
+@confirm_action("удаление записей")
+@handle_db_errors
 def delete(
     table_name: str,
     table_data: List[Dict[str, Any]],
@@ -148,14 +179,14 @@ def delete(
     return remaining
 
 
+@handle_db_errors
 def info_table(
     metadata: Dict[str, Any],
     table_name: str,
     table_data: List[Dict[str, Any]],
 ) -> None:
     if table_name not in metadata:
-        print(f'Ошибка: Таблица "{table_name}" не существует.')
-        return
+        raise KeyError(table_name)
 
     columns_meta = metadata[table_name]["columns"]
     columns_repr = ", ".join(

@@ -53,7 +53,11 @@ def print_help() -> None:
     print("<command> help- справочная информация\n")
 
 
-def _get_column_type(metadata: dict, table_name: str, column_name: str) -> str | None:
+def _get_column_type(
+    metadata: dict,
+    table_name: str,
+    column_name: str,
+) -> str | None:
     table_meta = metadata.get(table_name)
     if not table_meta:
         return None
@@ -88,6 +92,7 @@ def _parse_values(
     table_name: str,
     values_part: str,
 ) -> list[object] | None:
+    """Разобрать часть команды values (...) в список значений нужных типов."""
     values_part = values_part.strip()
     if not values_part.startswith("(") or not values_part.endswith(")"):
         print(f"Некорректное значение: {values_part}. Попробуйте снова.")
@@ -114,7 +119,7 @@ def _parse_values(
 
     result: list[object] = []
 
-    for raw_item, column_meta in zip(raw_items, data_columns):
+    for raw_item, column_meta in zip(raw_items, data_columns, strict=False):
         type_name = column_meta["type"]
         try:
             value = _convert_value(raw_item, type_name)
@@ -197,7 +202,7 @@ def run() -> None:
             print_help()
             continue
 
-        # ----- Команды управления таблицами (из шага 2) -----
+        # ----- управление таблицами -----
         if command == "create_table":
             if len(args) < 3:
                 print(
@@ -281,7 +286,7 @@ def run() -> None:
             lower_input = user_input.lower()
             where_pos = lower_input.find("where")
             if where_pos == -1:
-                rows = select(table_data)
+                rows = select(table_name, table_data)
             else:
                 condition_str = user_input[where_pos + len("where") :].strip()
                 where_clause = _parse_condition(
@@ -291,7 +296,7 @@ def run() -> None:
                 )
                 if where_clause is None:
                     continue
-                rows = select(table_data, where_clause)
+                rows = select(table_name, table_data, where_clause)
 
             _print_select_result(metadata, table_name, rows)
             continue

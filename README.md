@@ -20,7 +20,7 @@ make install
 
 ## Демонстрация работы проекта
 
-[![asciinema demo](https://asciinema.org/a/BqmjK3kTfyhRqJll2tw9RR8xY)](https://asciinema.org/a/BqmjK3kTfyhRqJll2tw9RR8xY)
+[![asciinema demo](https://asciinema.org/a/BqmjK3kTfyhRqJll2tw9RR8xY.svg)](https://asciinema.org/a/BqmjK3kTfyhRqJll2tw9RR8xY)
 
 
 

@@ -1,5 +1,6 @@
 # src/primitive_db/core.py
 
+
 from typing import Any, Dict, List
 
 from src.decorators import (
@@ -9,7 +10,7 @@ from src.decorators import (
     log_time,
 )
 
-ALLOWED_TYPES = {"int", "str", "bool"}
+from .constants import VALID_TYPES
 
 _select_cache = create_cacher()
 
@@ -34,7 +35,7 @@ def create_table(
         name = name.strip()
         type_name = type_name.strip()
 
-        if type_name not in ALLOWED_TYPES:
+        if type_name not in VALID_TYPES:
             raise ValueError(f"Некорректный тип столбца: {col}")
 
         parsed_columns.append({"name": name, "type": type_name})
@@ -111,9 +112,8 @@ def select(
     table_data: List[Dict[str, Any]],
     where_clause: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
-    key = (table_name, None)
+    key: Any = (table_name, None)
     if where_clause is not None:
-        # where_clause вида {'column': value}
         column, value = next(iter(where_clause.items()))
         key = (table_name, (column, value))
 

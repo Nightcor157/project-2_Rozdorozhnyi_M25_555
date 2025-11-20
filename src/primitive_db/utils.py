@@ -1,10 +1,11 @@
 # src/primitive_db/utils.py
 
+
 import json
 import os
 from typing import Any, Dict, List
 
-DATA_DIR = "data"
+from .constants import DATA_DIR
 
 
 def load_metadata(filepath: str) -> Dict[str, Any]:

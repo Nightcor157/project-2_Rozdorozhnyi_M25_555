@@ -1,10 +1,12 @@
 # src/primitive_db/engine.py
 
+
 import shlex
 
 import prompt
 from prettytable import PrettyTable
 
+from .constants import META_FILE
 from .core import (
     create_table,
     delete,
@@ -15,14 +17,13 @@ from .core import (
     select,
     update,
 )
+from .parser import parse_condition, parse_values
 from .utils import (
     load_metadata,
     load_table_data,
     save_metadata,
     save_table_data,
 )
-
-METADATA_FILE = "db_meta.json"
 
 
 def print_help() -> None:
@@ -53,112 +54,8 @@ def print_help() -> None:
     print("<command> help- справочная информация\n")
 
 
-def _get_column_type(
-    metadata: dict,
-    table_name: str,
-    column_name: str,
-) -> str | None:
-    table_meta = metadata.get(table_name)
-    if not table_meta:
-        return None
-
-    for column in table_meta.get("columns", []):
-        if column["name"] == column_name:
-            return column["type"]
-    return None
-
-
-def _convert_value(raw_value: str, type_name: str) -> object:
-    if type_name == "int":
-        return int(raw_value)
-    if type_name == "bool":
-        lower = raw_value.lower()
-        if lower == "true":
-            return True
-        if lower == "false":
-            return False
-        raise ValueError
-    if type_name == "str":
-        if raw_value.startswith('"') and raw_value.endswith('"'):
-            return raw_value[1:-1]
-        if raw_value.startswith("'") and raw_value.endswith("'"):
-            return raw_value[1:-1]
-        return raw_value
-    return raw_value
-
-
-def _parse_values(
-    metadata: dict,
-    table_name: str,
-    values_part: str,
-) -> list[object] | None:
-    """Разобрать часть команды values (...) в список значений нужных типов."""
-    values_part = values_part.strip()
-    if not values_part.startswith("(") or not values_part.endswith(")"):
-        print(f"Некорректное значение: {values_part}. Попробуйте снова.")
-        return None
-
-    inner = values_part[1:-1].strip()
-    if not inner:
-        print(f"Некорректное значение: {values_part}. Попробуйте снова.")
-        return None
-
-    raw_items = [item.strip() for item in inner.split(",")]
-
-    table_meta = metadata.get(table_name)
-    if not table_meta:
-        print(f'Ошибка: Таблица "{table_name}" не существует.')
-        return None
-
-    columns_meta = table_meta.get("columns", [])
-    data_columns = [col for col in columns_meta if col["name"] != "ID"]
-
-    if len(raw_items) != len(data_columns):
-        print(f"Некорректное значение: {values_part}. Попробуйте снова.")
-        return None
-
-    result: list[object] = []
-
-    for raw_item, column_meta in zip(raw_items, data_columns, strict=False):
-        type_name = column_meta["type"]
-        try:
-            value = _convert_value(raw_item, type_name)
-        except (ValueError, TypeError):
-            print(f"Некорректное значение: {raw_item}. Попробуйте снова.")
-            return None
-        result.append(value)
-
-    return result
-
-
-def _parse_condition(
-    metadata: dict,
-    table_name: str,
-    condition_str: str,
-) -> dict[str, object] | None:
-    if "=" not in condition_str:
-        print(f"Некорректное значение: {condition_str}. Попробуйте снова.")
-        return None
-
-    left, right = condition_str.split("=", 1)
-    column_name = left.strip()
-    raw_value = right.strip()
-
-    type_name = _get_column_type(metadata, table_name, column_name)
-    if type_name is None:
-        print(f"Некорректное значение: {column_name}. Попробуйте снова.")
-        return None
-
-    try:
-        value = _convert_value(raw_value, type_name)
-    except (ValueError, TypeError):
-        print(f"Некорректное значение: {raw_value}. Попробуйте снова.")
-        return None
-
-    return {column_name: value}
-
-
 def _print_select_result(metadata: dict, table_name: str, rows: list[dict]) -> None:
+    """Вывести результат select с помощью PrettyTable."""
     table_meta = metadata.get(table_name)
     if not table_meta:
         print(f'Ошибка: Таблица "{table_name}" не существует.')
@@ -193,7 +90,7 @@ def run() -> None:
 
         command_word = args[0]
         command = command_word.lower()
-        metadata = load_metadata(METADATA_FILE)
+        metadata = load_metadata(META_FILE)
 
         if command == "exit":
             break
@@ -214,7 +111,7 @@ def run() -> None:
             table_name = args[1]
             columns = args[2:]
             metadata = create_table(metadata, table_name, columns)
-            save_metadata(METADATA_FILE, metadata)
+            save_metadata(META_FILE, metadata)
             continue
 
         if command == "list_tables":
@@ -231,7 +128,7 @@ def run() -> None:
 
             table_name = args[1]
             metadata = drop_table(metadata, table_name)
-            save_metadata(METADATA_FILE, metadata)
+            save_metadata(META_FILE, metadata)
             continue
 
         # ----- insert into <table> values (...) -----
@@ -258,7 +155,7 @@ def run() -> None:
                 continue
 
             values_part = user_input[values_pos + len("values") :].strip()
-            values = _parse_values(metadata, table_name, values_part)
+            values = parse_values(metadata, table_name, values_part)
             if values is None:
                 continue
 
@@ -289,7 +186,7 @@ def run() -> None:
                 rows = select(table_name, table_data)
             else:
                 condition_str = user_input[where_pos + len("where") :].strip()
-                where_clause = _parse_condition(
+                where_clause = parse_condition(
                     metadata,
                     table_name,
                     condition_str,
@@ -329,11 +226,11 @@ def run() -> None:
             set_str = user_input[set_pos + len("set") : where_pos].strip()
             where_str = user_input[where_pos + len("where") :].strip()
 
-            set_clause = _parse_condition(metadata, table_name, set_str)
+            set_clause = parse_condition(metadata, table_name, set_str)
             if set_clause is None:
                 continue
 
-            where_clause = _parse_condition(metadata, table_name, where_str)
+            where_clause = parse_condition(metadata, table_name, where_str)
             if where_clause is None:
                 continue
 
@@ -366,7 +263,7 @@ def run() -> None:
                 continue
 
             where_str = user_input[where_pos + len("where") :].strip()
-            where_clause = _parse_condition(metadata, table_name, where_str)
+            where_clause = parse_condition(metadata, table_name, where_str)
             if where_clause is None:
                 continue
 

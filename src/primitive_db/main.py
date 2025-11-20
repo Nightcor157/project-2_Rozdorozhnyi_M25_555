@@ -2,13 +2,12 @@
 
 # src/primitive_db/main.py
 
-from .engine import welcome
+from .engine import run
 
 
 def main() -> None:
-    """Точка входа в консольное приложение primitive_db."""
     print("Первая попытка запустить проект!")
-    welcome()
+    run()
 
 
 if __name__ == "__main__":
